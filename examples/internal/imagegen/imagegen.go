@@ -27,8 +27,9 @@ import (
 // generation response. If the response contains no generated images, it returns
 // an error reporting that no images were returned. If the entries contain no
 // usable image data but include RAI filtering reasons, the error includes the
-// first non-empty reason. Otherwise, an error reports that the entries contain
-// no usable image data.
+// first reason that remains non-empty after trimming surrounding whitespace.
+// Whitespace-only reasons are ignored. Otherwise, an error reports that the
+// entries contain no usable image data.
 //
 // ImageBytes assumes the image is delivered as inline bytes (Image.ImageBytes);
 // an entry carrying only a GCS URI is treated as having no usable image data.

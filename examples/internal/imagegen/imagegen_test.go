@@ -68,10 +68,29 @@ func TestImageBytes(t *testing.T) {
 			wantErr: "image generation returned no usable image data",
 		},
 		{
+			name: "whitespace reason yields to a later real one",
+			response: &genai.GenerateImagesResponse{
+				GeneratedImages: []*genai.GeneratedImage{
+					{RAIFilteredReason: "   "},
+					{RAIFilteredReason: "  blocked  "},
+				},
+			},
+			wantErr: "image generation returned no image: blocked",
+		},
+		{
 			name: "empty image data",
 			response: &genai.GenerateImagesResponse{
 				GeneratedImages: []*genai.GeneratedImage{
 					{Image: &genai.Image{}},
+				},
+			},
+			wantErr: "image generation returned no usable image data",
+		},
+		{
+			name: "GCS URI without inline image data",
+			response: &genai.GenerateImagesResponse{
+				GeneratedImages: []*genai.GeneratedImage{
+					{Image: &genai.Image{GCSURI: "gs://bucket/image.png"}},
 				},
 			},
 			wantErr: "image generation returned no usable image data",
@@ -82,12 +101,22 @@ func TestImageBytes(t *testing.T) {
 				GeneratedImages: []*genai.GeneratedImage{
 					nil,
 					{RAIFilteredReason: "filtered"},
-					{Image: &genai.Image{ImageBytes: []byte("first image"), MIMEType: "image/png"}},
+					{Image: &genai.Image{ImageBytes: []byte("first image"), MIMEType: "image/jpeg"}},
 					{Image: &genai.Image{ImageBytes: []byte("second image")}},
 				},
 			},
 			want:     []byte("first image"),
-			wantMIME: "image/png",
+			wantMIME: "image/jpeg",
+		},
+		{
+			name: "MIME type omitted by the response",
+			response: &genai.GenerateImagesResponse{
+				GeneratedImages: []*genai.GeneratedImage{
+					{Image: &genai.Image{ImageBytes: []byte("bytes")}},
+				},
+			},
+			want:     []byte("bytes"),
+			wantMIME: "",
 		},
 	}
 
