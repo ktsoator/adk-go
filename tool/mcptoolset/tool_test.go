@@ -71,6 +71,19 @@ func TestMCPToolRunContent(t *testing.T) {
 				"package example\n"},
 		},
 		{
+			name: "embedded text reports an accompanying blob",
+			result: &mcp.CallToolResult{Content: []mcp.Content{
+				&mcp.EmbeddedResource{Resource: &mcp.ResourceContents{
+					URI:      "file:///response.txt",
+					MIMEType: "text/plain",
+					Text:     "caption",
+					Blob:     []byte{1, 2, 3, 4},
+				}},
+			}},
+			want: map[string]any{"output": "[MCP embedded resource: uri=\"file:///response.txt\", " +
+				"mimeType=\"text/plain\", size=4 bytes]\ncaption"},
+		},
+		{
 			name: "text MIME blob is decoded",
 			result: &mcp.CallToolResult{Content: []mcp.Content{
 				&mcp.EmbeddedResource{Resource: &mcp.ResourceContents{
@@ -119,6 +132,18 @@ func TestMCPToolRunContent(t *testing.T) {
 				"mimeType=\"text/plain; charset=utf-16\", size=2 bytes]"},
 		},
 		{
+			name: "unsupported extended charset is represented by metadata",
+			result: &mcp.CallToolResult{Content: []mcp.Content{
+				&mcp.EmbeddedResource{Resource: &mcp.ResourceContents{
+					URI:      "file:///utf16-star.txt",
+					MIMEType: "text/plain; charset*=utf-16",
+					Blob:     []byte{0x68, 0x00, 0x69, 0x00},
+				}},
+			}},
+			want: map[string]any{"output": "[MCP embedded resource: uri=\"file:///utf16-star.txt\", " +
+				"mimeType=\"text/plain; charset*=utf-16\", size=4 bytes]"},
+		},
+		{
 			name: "US-ASCII text blob is decoded",
 			result: &mcp.CallToolResult{Content: []mcp.Content{
 				&mcp.EmbeddedResource{Resource: &mcp.ResourceContents{
@@ -129,6 +154,30 @@ func TestMCPToolRunContent(t *testing.T) {
 			}},
 			want: map[string]any{"output": "[MCP embedded resource: uri=\"file:///ascii.txt\", " +
 				"mimeType=\"text/plain; charset=us-ascii\"]\nhello"},
+		},
+		{
+			name: "ASCII alias text blob is decoded",
+			result: &mcp.CallToolResult{Content: []mcp.Content{
+				&mcp.EmbeddedResource{Resource: &mcp.ResourceContents{
+					URI:      "file:///ascii-alias.txt",
+					MIMEType: "text/plain; charset=ascii",
+					Blob:     []byte("hello"),
+				}},
+			}},
+			want: map[string]any{"output": "[MCP embedded resource: uri=\"file:///ascii-alias.txt\", " +
+				"mimeType=\"text/plain; charset=ascii\"]\nhello"},
+		},
+		{
+			name: "form URL encoded blob is decoded",
+			result: &mcp.CallToolResult{Content: []mcp.Content{
+				&mcp.EmbeddedResource{Resource: &mcp.ResourceContents{
+					URI:      "file:///form.txt",
+					MIMEType: "application/x-www-form-urlencoded",
+					Blob:     []byte("name=alice&active=true"),
+				}},
+			}},
+			want: map[string]any{"output": "[MCP embedded resource: uri=\"file:///form.txt\", " +
+				"mimeType=\"application/x-www-form-urlencoded\"]\nname=alice&active=true"},
 		},
 		{
 			name: "non-ASCII byte is represented by metadata",
@@ -404,6 +453,43 @@ func TestMCPToolRunContent(t *testing.T) {
 			}
 			if diff := cmp.Diff(test.want, got); diff != "" {
 				t.Errorf("Run() result mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestHasMIMECharsetParameter(t *testing.T) {
+	tests := []struct {
+		name     string
+		mimeType string
+		want     bool
+	}{
+		{
+			name:     "extended charset parameter",
+			mimeType: `text/plain; charset*=UTF-16''x; name="a`,
+			want:     true,
+		},
+		{
+			name:     "charset after malformed parameter",
+			mimeType: "text/plain; name=my file.txt; charset=utf-16",
+			want:     true,
+		},
+		{
+			name:     "uppercase charset parameter",
+			mimeType: `text/plain; CHARSET=utf-16; name="a`,
+			want:     true,
+		},
+		{
+			name:     "charset text inside quoted value",
+			mimeType: `text/plain; name="foo;charset=utf-16" invalid`,
+			want:     false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := hasMIMECharsetParameter(test.mimeType); got != test.want {
+				t.Errorf("hasMIMECharsetParameter(%q) = %v, want %v", test.mimeType, got, test.want)
 			}
 		})
 	}

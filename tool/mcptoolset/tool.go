@@ -225,6 +225,9 @@ func formatEmbeddedResource(content *mcp.EmbeddedResource) string {
 	resource := content.Resource
 	attributes := resourceAttributes(resource.URI, resource.MIMEType)
 	if resource.Text != "" {
+		if len(resource.Blob) > 0 {
+			attributes = append(attributes, fmt.Sprintf("size=%d bytes", len(resource.Blob)))
+		}
 		return formatContentWithBody("embedded resource", attributes, resource.Text)
 	}
 	if text, ok := decodeTextBlob(resource.Blob, resource.MIMEType); ok {
@@ -293,21 +296,26 @@ func decodeTextBlob(blob []byte, mimeType string) (string, bool) {
 		return "", false
 	}
 
+	declaresCharset := hasMIMECharsetParameter(mimeType)
 	mediaType, params, err := mime.ParseMediaType(mimeType)
-	if err != nil && (!errors.Is(err, mime.ErrInvalidMediaParameter) || hasMIMECharsetParameter(mimeType)) {
+	if err != nil && (!errors.Is(err, mime.ErrInvalidMediaParameter) || declaresCharset) {
 		return "", false
 	}
 	if !isTextMediaType(mediaType) {
 		return "", false
 	}
 
-	charset := strings.ToLower(params["charset"])
+	charset, parsedCharset := params["charset"]
+	if declaresCharset && !parsedCharset {
+		return "", false
+	}
+	charset = strings.ToLower(charset)
 	switch charset {
 	case "", "utf-8", "utf8":
 		if !utf8.Valid(blob) {
 			return "", false
 		}
-	case "us-ascii":
+	case "us-ascii", "ascii":
 		for _, b := range blob {
 			if b >= utf8.RuneSelf {
 				return "", false
@@ -321,14 +329,36 @@ func decodeTextBlob(blob []byte, mimeType string) (string, bool) {
 
 func hasMIMECharsetParameter(value string) bool {
 	_, params, ok := strings.Cut(value, ";")
-	for ok {
-		var parameter string
-		parameter, params, ok = strings.Cut(params, ";")
+	if !ok {
+		return false
+	}
+
+	start := 0
+	inQuote := false
+	for i := 0; i <= len(params); i++ {
+		if i != len(params) {
+			switch params[i] {
+			case '\\':
+				if inQuote && i+1 < len(params) {
+					i++
+				}
+				continue
+			case '"':
+				inQuote = !inQuote
+				continue
+			}
+		}
+		if i != len(params) && (params[i] != ';' || inQuote) {
+			continue
+		}
+
+		parameter := params[start:i]
 		name, _, _ := strings.Cut(parameter, "=")
-		name = strings.ToLower(strings.Join(strings.Fields(name), ""))
+		name = strings.ToLower(strings.TrimSpace(name))
 		if name == "charset" || strings.HasPrefix(name, "charset*") {
 			return true
 		}
+		start = i + 1
 	}
 	return false
 }
@@ -338,7 +368,7 @@ func isTextMediaType(mediaType string) bool {
 		return true
 	}
 	switch mediaType {
-	case "application/json", "application/javascript", "application/toml", "application/xml",
+	case "application/json", "application/javascript", "application/toml", "application/x-www-form-urlencoded", "application/xml",
 		"application/x-yaml", "application/yaml":
 		return true
 	default:
