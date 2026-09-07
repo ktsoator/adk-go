@@ -541,6 +541,105 @@ func TestModel_GenerateStream_CompletedContentOrder(t *testing.T) {
 	}
 }
 
+func TestModel_GenerateStream_NarrowerCompletedContentPreservesAggregate(t *testing.T) {
+	const (
+		reasoningSummaryDelta = `{"type":"response.reasoning_summary_text.delta","item_id":"rs_1","delta":"Weighing options"}`
+		reasoningOnlyBody     = `{"id":"resp_1","model":"stream-model","status":"completed","output":[{"id":"rs_1","type":"reasoning","summary":[{"type":"summary_text","text":"Weighing options"}],"content":[]},{"id":"msg_1","type":"message","role":"assistant","content":[{"type":"output_text","text":""}]}]}`
+		shorterTextBody       = `{"id":"resp_1","model":"stream-model","status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"hel"}]}]}`
+		evItemAdded           = `{"type":"response.output_item.added","item":{"id":"item_1","type":"function_call","call_id":"call_1","name":"get_weather"}}`
+		evArgsDone            = `{"type":"response.function_call_arguments.done","item_id":"item_1","arguments":"{\"city\":\"SF\"}"}`
+	)
+
+	tests := []struct {
+		name   string
+		events []string
+		want   *genai.Content
+	}{
+		{
+			name: "reasoning-only snapshot does not replace an answer",
+			events: []string{
+				evCreated,
+				reasoningSummaryDelta,
+				evDelta1,
+				evDelta2,
+				`{"type":"response.completed","response":` + reasoningOnlyBody + `}`,
+			},
+			want: &genai.Content{
+				Role: genai.RoleModel,
+				Parts: []*genai.Part{
+					{Text: "Weighing options", Thought: true},
+					{Text: "hello"},
+				},
+			},
+		},
+		{
+			name: "shorter text snapshot does not truncate an answer",
+			events: []string{
+				evCreated,
+				evDelta1,
+				evDelta2,
+				`{"type":"response.completed","response":` + shorterTextBody + `}`,
+			},
+			want: genai.NewContentFromText("hello", genai.RoleModel),
+		},
+		{
+			name: "message snapshot does not discard a streamed function call",
+			events: []string{
+				evCreated,
+				evItemAdded,
+				evArgsDone,
+				evCompleted,
+			},
+			want: &genai.Content{
+				Role: genai.RoleModel,
+				Parts: []*genai.Part{{
+					FunctionCall: &genai.FunctionCall{
+						Name: "get_weather",
+						ID:   "call_1",
+						Args: map[string]any{"city": "SF"},
+					},
+				}},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := runStream(t, tc.events...)
+			if err != nil {
+				t.Fatalf("GenerateContent() stream err = %v", err)
+			}
+			final := assertTurnShape(t, got)
+			if diff := cmp.Diff(tc.want, final.Content); diff != "" {
+				t.Errorf("final content mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestModel_GenerateStream_CompletedFunctionCallReplacesThoughtOnlyAggregate(t *testing.T) {
+	const completedBody = `{"id":"resp_1","model":"stream-model","status":"completed","output":[{"id":"item_1","type":"function_call","call_id":"call_1","name":"get_weather","arguments":"{\"city\":\"SF\"}"}]}`
+	got, err := runStream(t,
+		evCreated,
+		`{"type":"response.reasoning_text.delta","item_id":"rs_1","delta":"Checking"}`,
+		`{"type":"response.completed","response":`+completedBody+`}`,
+	)
+	if err != nil {
+		t.Fatalf("GenerateContent() stream err = %v", err)
+	}
+	final := assertTurnShape(t, got)
+	blocking, err := runBlocking(t, completedBody)
+	if err != nil {
+		t.Fatalf("GenerateContent() blocking err = %v", err)
+	}
+	if len(blocking) != 1 {
+		t.Fatalf("blocking emitted %d responses, want 1", len(blocking))
+	}
+	if diff := cmp.Diff(blocking[0].Content, final.Content); diff != "" {
+		t.Errorf("content mismatch (-blocking +streamed):\n%s", diff)
+	}
+}
+
 func TestModel_GenerateStream_UnusableCompletedContent(t *testing.T) {
 	tests := []struct {
 		name   string
