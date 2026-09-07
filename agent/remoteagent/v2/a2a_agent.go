@@ -49,8 +49,9 @@ type BeforeA2ARequestCallback func(ctx agent.Context, req *a2a.SendMessageReques
 type A2AEventConverter func(ctx agent.InvocationContext, req *a2a.SendMessageRequest, event a2a.Event, err error) (*session.Event, error)
 
 // AfterA2ARequestCallback is called after receiving a response from the remote agent and converting it to a session.Event.
-// In streaming responses the callback is invoked for every request. Session event parameter might be nil if conversion logic
-// decides to not emit an A2A event.
+// For streaming requests, the callback is invoked for every response that enters normal event processing. Responses consumed
+// only to discover remote task information during cancellation cleanup are not converted and do not invoke this callback.
+// The session event parameter may be nil if conversion logic decides not to emit an A2A event.
 //
 // If it returns non-nil result or error, it gets emitted instead of the original result.
 type AfterA2ARequestCallback func(ctx agent.Context, req *a2a.SendMessageRequest, resp *session.Event, err error) (*session.Event, error)
@@ -528,9 +529,8 @@ func (a *a2aAgent) run(ctx agent.InvocationContext, cfg A2AConfig) iter.Seq2[*se
 				return false
 			}
 			lastCleanupTarget = &remoteTaskCleanupTarget{taskInfo: taskInfo}
-
-			// During post-cancellation draining, keep waiting for an event carrying task state.
-			return ctx.Err() == nil
+			// A task ID is sufficient for best-effort cleanup even without task state.
+			return true
 		}
 		defer func() {
 			var cleanupCtx context.Context
@@ -622,7 +622,8 @@ func (a *a2aAgent) run(ctx agent.InvocationContext, cfg A2AConfig) iter.Seq2[*se
 						streamCtx.stopWaiting()
 					}
 				}
-				if msg, ok := a2aEvent.(*a2a.Message); ok && msg != nil && msg.TaskID == "" {
+				if msg, ok := a2aEvent.(*a2a.Message); ok && msg != nil {
+					lastCleanupTarget = nil
 					directResponseReceived = true
 					streamCtx.stopWaiting()
 				}
@@ -670,6 +671,14 @@ func remoteTaskCleanupTargetFromEvent(event a2a.Event) (remoteTaskCleanupTarget,
 	return target, true
 }
 
+func contextHasUsableTime(ctx context.Context) bool {
+	if ctx == nil || ctx.Err() != nil {
+		return false
+	}
+	deadline, ok := ctx.Deadline()
+	return !ok || time.Until(deadline) > 0
+}
+
 func cleanupRemoteTask(
 	ctx context.Context,
 	cleanupCtx context.Context,
@@ -693,7 +702,7 @@ func cleanupRemoteTask(
 	if target.state == a2a.TaskStateInputRequired && cause == nil {
 		return
 	}
-	if cleanupCtx == nil || cleanupCtx.Err() != nil {
+	if !contextHasUsableTime(cleanupCtx) {
 		var cancelTimeout context.CancelFunc
 		cleanupCtx, cancelTimeout = context.WithTimeout(ctx, remoteTaskCleanupTimeout)
 		defer cancelTimeout()
