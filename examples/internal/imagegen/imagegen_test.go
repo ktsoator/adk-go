@@ -62,7 +62,7 @@ func TestImageBytes(t *testing.T) {
 			name: "whitespace filtering reason ignored",
 			response: &genai.GenerateImagesResponse{
 				GeneratedImages: []*genai.GeneratedImage{
-					{RAIFilteredReason: "   "},
+					{RAIFilteredReason: " \t\n "},
 				},
 			},
 			wantErr: "image generation returned no usable image data",
@@ -85,6 +85,18 @@ func TestImageBytes(t *testing.T) {
 				},
 			},
 			wantErr: "image generation returned no usable image data",
+		},
+		{
+			name: "empty but non-nil image bytes with a reason",
+			response: &genai.GenerateImagesResponse{
+				GeneratedImages: []*genai.GeneratedImage{
+					{
+						Image:             &genai.Image{ImageBytes: []byte{}},
+						RAIFilteredReason: "blocked",
+					},
+				},
+			},
+			wantErr: "image generation returned no image: blocked",
 		},
 		{
 			name: "GCS URI without inline image data",
