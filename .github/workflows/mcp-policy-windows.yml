@@ -1,0 +1,63 @@
+name: MCP policy Windows reproduction
+
+on:
+  push:
+    branches: [test/mcp-policy-windows]
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Compare original and corrected executable alias
+        shell: python
+        run: |
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+
+          test = "TestMCPPolicyStartsOnlyApprovedCommandLazily"
+          command = ["go", "test", "-mod=readonly", "-count=1", "-timeout=120s", "-json",
+                     "./internal/configurable", "-run", "^" + test + "$"]
+          expected = {
+              test + "/direct_executable",
+              test + "/approved_invocation_path",
+              test + "/config_alias_cannot_select_invocation_path",
+              test + "/retargeted_policy_alias_is_rejected",
+              test + "/retargeted_config_alias_does_not_affect_approved_path",
+          }
+
+          def run(label):
+              result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace")
+              print(label, "exit code:", result.returncode, flush=True)
+              print(result.stdout, flush=True)
+              print(result.stderr, flush=True)
+              events = [json.loads(line) for line in result.stdout.splitlines() if line.startswith("{")]
+              outcomes = {event["Test"]: event["Action"] for event in events
+                          if "Test" in event and event["Action"] in {"pass", "fail", "skip"}}
+              assert expected <= outcomes.keys(), "Expected subtests did not all run; inspect compilation/setup errors"
+              assert all(outcomes[name] != "skip" for name in expected), "Symlink cases were skipped; reproduction is inconclusive"
+              return result.returncode, outcomes
+
+          before_code, before = run("Original")
+          source = Path("internal/configurable/mcp_policy_test.go")
+          original = source.read_text(encoding="utf-8")
+          old = 'command = filepath.Join(t.TempDir(), "approved-launcher")'
+          new = 'name := "approved-launcher"\n\t\t\t\tif runtime.GOOS == "windows" {\n\t\t\t\t\tname += ".exe"\n\t\t\t\t}\n\t\t\t\tcommand = filepath.Join(t.TempDir(), name)'
+          assert original.count(old) == 1, "Expected exactly one alias fixture"
+          source.write_text(original.replace(old, new), encoding="utf-8")
+          after_code, after = run("With .exe on Windows")
+          assert before_code != 0 and before[test + "/direct_executable"] == "pass", "Original did not reproduce the expected failure"
+          assert all(before[name] == "fail" for name in expected if name != test + "/direct_executable"), "Unexpected original failure pattern"
+          assert after_code == 0 and all(after[name] == "pass" for name in expected), "Corrected alias did not pass all subtests"
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("Windows reproduction confirmed: the original alias failed all four symlink cases; adding .exe passed all five cases. No cases were skipped.\n")
