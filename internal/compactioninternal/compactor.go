@@ -234,7 +234,7 @@ func stamp(ctx context.Context, ev *session.Event) *session.Event {
 
 // collect materializes a session's events into a slice.
 func collect(sess session.Session) []*session.Event {
-	all := sess.Events()
+	all := session.ActiveEvents(sess.Events())
 	if all == nil {
 		return nil
 	}

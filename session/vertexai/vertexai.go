@@ -140,6 +140,9 @@ func (s *vertexAiService) AppendEvent(ctx context.Context, sess session.Session,
 	if sess.ID() == "" || event == nil {
 		return fmt.Errorf("session_id and event are required, got session_id: %q, event_id: %t", sess.ID(), event == nil)
 	}
+	if event.Actions.RewindBeforeInvocationID != "" {
+		return fmt.Errorf("%w: Vertex AI rewind is not implemented", session.ErrRewindUnsupported)
+	}
 	// temp: keys are scoped to the current invocation and must not reach storage.
 	// The local session below still receives the untrimmed event, which is what
 	// keeps them readable for the rest of the invocation.

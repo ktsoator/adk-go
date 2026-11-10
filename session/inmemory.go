@@ -72,9 +72,11 @@ func (s *inMemoryService) Create(ctx context.Context, req *CreateRequest) (*Crea
 		state = make(stateMap)
 	}
 	val := &session{
-		id:        key,
-		state:     state,
-		updatedAt: platform.Now(ctx),
+		id:                 key,
+		state:              state,
+		updatedAt:          platform.Now(ctx),
+		rewindCheckpoints:  make(map[string]rewindCheckpoint),
+		rewoundInvocations: make(map[string]struct{}),
 	}
 
 	s.sessions.Set(encodedKey, val)
@@ -137,7 +139,11 @@ func (s *inMemoryService) Get(ctx context.Context, req *GetRequest) (*GetRespons
 		if !req.After.IsZero() && event.Timestamp.Before(req.After) {
 			continue
 		}
-		copiedSession.events = append(copiedSession.events, event)
+		// Rewind markers control future history. A reader must not be able to
+		// install or change one by mutating an event returned from Get.
+		copy := *event
+		copy.Actions.ArtifactDelta = maps.Clone(event.Actions.ArtifactDelta)
+		copiedSession.events = append(copiedSession.events, &copy)
 	}
 
 	return &GetResponse{
@@ -219,6 +225,9 @@ func (s *inMemoryService) AppendEvent(ctx context.Context, curSession Session, e
 	if event == nil {
 		return fmt.Errorf("event is nil")
 	}
+	if event.Actions.RewindBeforeInvocationID != "" {
+		return fmt.Errorf("%w: use Rewind to write a rewind marker", ErrRewindUnsupported)
+	}
 	if event.Partial {
 		return nil
 	}
@@ -261,6 +270,16 @@ func (s *inMemoryService) AppendEvent(ctx context.Context, curSession Session, e
 	// during those reads, potentially causing a fatal concurrent map read write runtime throw.
 	sess.mu.Lock()
 	defer sess.mu.Unlock()
+	if sess.rewindGeneration != stored_session.rewindGeneration {
+		return ErrSessionRewound
+	}
+	if _, discarded := stored_session.rewoundInvocations[event.InvocationID]; discarded {
+		return fmt.Errorf("%w: cannot append to a rewound invocation", ErrInvocationNotFound)
+	}
+	if _, exists := stored_session.rewindCheckpoints[event.InvocationID]; !exists && event.InvocationID != "" {
+		state, supported := snapshotRewindState(stored_session.state)
+		stored_session.rewindCheckpoints[event.InvocationID] = rewindCheckpoint{state: state, supported: supported}
+	}
 	if err := sess.appendEvent(event); err != nil {
 		return fmt.Errorf("fail to set state on appendEvent: %w", err)
 	}
@@ -364,6 +383,11 @@ type session struct {
 	events    []*Event
 	state     map[string]any
 	updatedAt time.Time
+	// Checkpoints belong only to the canonical stored session. Handles carry
+	// its generation so an invocation cannot write across a rewind boundary.
+	rewindCheckpoints  map[string]rewindCheckpoint
+	rewoundInvocations map[string]struct{}
+	rewindGeneration   uint64
 }
 
 func (s *session) ID() string {
@@ -525,7 +549,8 @@ func copySessionWithoutStateAndEvents(sess *session) *session {
 			userID:    sess.id.userID,
 			sessionID: sess.id.sessionID,
 		},
-		updatedAt: sess.updatedAt,
+		updatedAt:        sess.updatedAt,
+		rewindGeneration: sess.rewindGeneration,
 	}
 }
 

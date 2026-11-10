@@ -407,6 +407,17 @@ func newRunContext(t *testing.T, invocationID string, events ...*session.Event) 
 		t.Fatalf("Failed to create session: %v", err)
 	}
 	for _, ev := range events {
+		if target := ev.Actions.RewindBeforeInvocationID; target != "" {
+			if err := service.(session.RewindService).Rewind(t.Context(), &session.RewindRequest{AppName: "test", UserID: "user", SessionID: "ses1", BeforeInvocationID: target}); err != nil {
+				t.Fatal(err)
+			}
+			fresh, err := service.Get(t.Context(), &session.GetRequest{AppName: "test", UserID: "user", SessionID: "ses1"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp.Session = fresh.Session
+			continue
+		}
 		if err := service.AppendEvent(t.Context(), resp.Session, ev); err != nil {
 			t.Fatalf("Failed to append event: %v", err)
 		}
@@ -528,6 +539,18 @@ func TestRetryAndReflect_AfterRunKeepsCountsOfPausedInvocation(t *testing.T) {
 				functionResponseEvent("inv1", "user", "call-unknown", map[string]any{"approved": true}),
 			},
 			wantKept: true,
+		},
+		{
+			name: "rewind removes a later pause in a retained invocation",
+			events: []*session.Event{
+				longRunningCallEvent("inv1", "call-1"),
+				{InvocationID: "inv2"},
+				functionResponseEvent("inv1", "user", "call-1", map[string]any{"approved": true}),
+				longRunningCallEvent("inv1", "call-2"),
+				{Actions: session.EventActions{RewindBeforeInvocationID: "inv2"}},
+				functionResponseEvent("inv1", "user", "call-1", map[string]any{"approved": true}),
+			},
+			wantKept: false,
 		},
 		{
 			name:     "unanswered long-running call of another invocation",

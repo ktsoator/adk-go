@@ -28,9 +28,9 @@ import (
 //
 //	if errors.Is(err, session.ErrNotFound) { … }
 //
-// No other method reports it, because no other method treats a missing session
-// as a failure: [Service.Delete] is a no-op on one, and [Service.List] returns
-// an empty result. A session that belongs to another user counts as missing:
+// [RewindService.Rewind] also reports it for a missing session.
+// [Service.Delete] is a no-op on one, and [Service.List] returns an empty result.
+// A session that belongs to another user counts as missing:
 // Get reports it as ErrNotFound and Delete is a no-op on it.
 //
 // It does not cover every error Get and AppendEvent can return. A request that

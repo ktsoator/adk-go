@@ -134,7 +134,7 @@ func (w *Workflow) ReconstructRunState(sess session.Session, invocationID string
 		return nil, nil
 	}
 	nodesByName := buildNodesByName(w.graph)
-	events := sess.Events()
+	events := session.ActiveEvents(sess.Events())
 
 	// Stage 1: scan history into a per-node view of the pause
 	// (interrupts raised, responses that resolved them, schemas).

@@ -199,7 +199,7 @@ func (s *dynamicSubScheduler) rehydrateCache() {
 	prefix := s.parentPath + "/"
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for ev := range sess.Events().All() {
+	for ev := range session.ActiveEvents(sess.Events()).All() {
 		if ev == nil || ev.Partial || ev.NodeInfo == nil {
 			continue
 		}

@@ -41,7 +41,7 @@ func authPreprocessor(ctx agent.InvocationContext, req *model.LLMRequest, f *Flo
 			return
 		}
 		var events []*session.Event
-		for ev := range ctx.Session().Events().All() {
+		for ev := range session.ActiveEvents(ctx.Session().Events()).All() {
 			if utils.EventBelongsToBranch(ctx.Branch(), ev.Branch) {
 				events = append(events, ev)
 			}

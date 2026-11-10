@@ -708,3 +708,25 @@ func TestMarshalEventDropsNilParts(t *testing.T) {
 		t.Errorf("parts[1] = %s, want the function call with empty args object", got.Content.Parts[1])
 	}
 }
+
+func TestRewindMarkerIsReadOnlyOverREST(t *testing.T) {
+	stored := session.Event{Actions: session.EventActions{RewindBeforeInvocationID: "target"}}
+	encoded, err := json.Marshal(models.FromSessionEvent(stored))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded models.Event
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Actions.RewindBeforeInvocationID != "target" {
+		t.Fatal("REST output dropped rewind marker")
+	}
+	in, err := models.ToSessionEvent(decoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if in.Actions.RewindBeforeInvocationID != "" {
+		t.Fatal("REST accepted a client-supplied rewind marker")
+	}
+}

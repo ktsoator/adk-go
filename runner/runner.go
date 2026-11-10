@@ -737,7 +737,7 @@ func (r *Runner) run(ctx context.Context, userID, sessionID string, msg *genai.C
 		// adk_request_input response; any other response restarts the graph.
 		// The first response in the message decides the route.
 		agentToRun, branch := r.rootAgent, ""
-		if ev := utils.FunctionCallEvent(storedSession.Events(), msg); ev != nil {
+		if ev := utils.FunctionCallEvent(session.ActiveEvents(storedSession.Events()), msg); ev != nil {
 			if sub := r.rootAgent.FindAgent(ev.Author); sub != nil && !r.isInGraphWorkflow(sub) {
 				agentToRun, branch = sub, ev.Branch
 			}
@@ -1262,7 +1262,7 @@ func findActiveTaskIsolationScope(sess session.Session) string {
 	if sess == nil {
 		return ""
 	}
-	events := sess.Events()
+	events := session.ActiveEvents(sess.Events())
 	finished := map[string]struct{}{}
 	for i := events.Len() - 1; i >= 0; i-- {
 		ev := events.At(i)
@@ -1291,8 +1291,8 @@ func findActiveTaskIsolationScope(sess session.Session) string {
 
 // findAgentToRun returns the agent that should handle the next request based on
 // session history.
-func (r *Runner) findAgentToRun(session session.Session, msg *genai.Content) (agent.Agent, error) {
-	if event := utils.FunctionCallEvent(session.Events(), msg); event != nil {
+func (r *Runner) findAgentToRun(sess session.Session, msg *genai.Content) (agent.Agent, error) {
+	if event := utils.FunctionCallEvent(session.ActiveEvents(sess.Events()), msg); event != nil {
 		subAgent := r.rootAgent.FindAgent(event.Author)
 		if subAgent != nil {
 			return subAgent, nil
@@ -1300,7 +1300,7 @@ func (r *Runner) findAgentToRun(session session.Session, msg *genai.Content) (ag
 		log.Printf("Function call from an unknown agent: %s, event id: %s", event.Author, event.ID) //nolint:forbidigo // pre-slog call site
 	}
 
-	events := session.Events()
+	events := session.ActiveEvents(sess.Events())
 	for i := events.Len() - 1; i >= 0; i-- {
 		event := events.At(i)
 

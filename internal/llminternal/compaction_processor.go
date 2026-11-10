@@ -242,7 +242,7 @@ func promptTokenEstimator(ctx agent.InvocationContext) compactioninternal.TokenC
 		// A suffix may omit a response's call without making that response stale.
 		allEvents := events
 		if ctx.Session() != nil {
-			allEvents = slices.Collect(ctx.Session().Events().All())
+			allEvents = slices.Collect(session.ActiveEvents(ctx.Session().Events()).All())
 		}
 		contents, err := buildContentsDefaultWithCallSource(
 			ctx.Agent().Name(),

@@ -410,6 +410,9 @@ func (s *databaseService) AppendEvent(ctx context.Context, curSession session.Se
 	if event == nil {
 		return fmt.Errorf("event is nil")
 	}
+	if event.Actions.RewindBeforeInvocationID != "" {
+		return fmt.Errorf("%w: database rewind is not implemented", session.ErrRewindUnsupported)
+	}
 	// ignore partial events
 	if event.Partial {
 		return nil

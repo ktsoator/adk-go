@@ -150,3 +150,38 @@ func TestPromptTokenEstimator_SuffixDoesNotLogPairedResponseAsOrphan(t *testing.
 		t.Errorf("paired response in suffix produced a stale-response notice: %q", output)
 	}
 }
+
+func TestRewindTokenEstimatorExcludesDiscardedCalls(t *testing.T) {
+	svc := session.InMemoryService()
+	created, err := svc.Create(t.Context(), &session.CreateRequest{AppName: "app", UserID: "user"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := session.NewEvent(t.Context(), "A")
+	call.Author = "worker"
+	call.Content = genai.NewContentFromParts([]*genai.Part{{FunctionCall: &genai.FunctionCall{ID: "call", Name: "ping"}}}, genai.RoleModel)
+	if err := svc.AppendEvent(t.Context(), created.Session, call); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.(session.RewindService).Rewind(t.Context(), &session.RewindRequest{AppName: "app", UserID: "user", SessionID: created.Session.ID(), BeforeInvocationID: "A"}); err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := svc.Get(t.Context(), &session.GetRequest{AppName: "app", UserID: "user", SessionID: created.Session.ID()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := session.NewEvent(t.Context(), "B")
+	response.Author = "worker"
+	response.Content = genai.NewContentFromParts([]*genai.Part{{FunctionResponse: &genai.FunctionResponse{ID: "call", Name: "ping", Response: map[string]any{"value": strings.Repeat("x", 4000)}}}}, genai.RoleUser)
+	if err := svc.AppendEvent(t.Context(), fresh.Session, response); err != nil {
+		t.Fatal(err)
+	}
+	ctx := icontext.NewInvocationContext(t.Context(), icontext.InvocationContextParams{
+		Agent: &mockLLMAgent{Agent: utils.Must(agent.New(agent.Config{Name: "worker"})), s: &State{}}, Session: fresh.Session,
+	})
+	captureLog(t, func() {
+		if got := promptTokenEstimator(ctx)([]*session.Event{response}); got != 0 {
+			t.Fatal("token estimator counted a response paired only with a discarded call")
+		}
+	})
+}
