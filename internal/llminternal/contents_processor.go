@@ -88,7 +88,7 @@ func ContentsRequestProcessor(ctx agent.InvocationContext, req *model.LLMRequest
 
 		var events []*session.Event
 		if ctx.Session() != nil {
-			for e := range ctx.Session().Events().All() {
+			for e := range session.ActiveEvents(ctx.Session().Events()).All() {
 				if !compactionEnabled && e.Actions.Compaction != nil {
 					continue
 				}

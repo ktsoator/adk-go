@@ -357,7 +357,7 @@ func openLongRunningCallIDs(sess session.Session) map[string]struct{} {
 		return open
 	}
 	answered := map[string]struct{}{}
-	events := sess.Events()
+	events := session.ActiveEvents(sess.Events())
 	for i := 0; i < events.Len(); i++ {
 		ev := events.At(i)
 		for _, id := range ev.LongRunningToolIDs {
@@ -443,7 +443,7 @@ func findEventByFunctionCallID(sess session.Session, id string) *session.Event {
 	if sess == nil || id == "" {
 		return nil
 	}
-	events := sess.Events()
+	events := session.ActiveEvents(sess.Events())
 	for i := events.Len() - 1; i >= 0; i-- {
 		ev := events.At(i)
 		if ev == nil {

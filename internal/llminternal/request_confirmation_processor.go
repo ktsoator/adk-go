@@ -48,7 +48,7 @@ func RequestConfirmationRequestProcessor(ctx agent.InvocationContext, req *model
 
 		var events []*session.Event
 		if ctx.Session() != nil {
-			for e := range ctx.Session().Events().All() {
+			for e := range session.ActiveEvents(ctx.Session().Events()).All() {
 				events = append(events, e)
 			}
 		}

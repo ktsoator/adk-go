@@ -179,7 +179,7 @@ func hasOpenLongRunningCall(sess session.Session, invocationID string) bool {
 		return false
 	}
 	open := make(map[string]struct{})
-	for ev := range sess.Events().All() {
+	for ev := range session.ActiveEvents(sess.Events()).All() {
 		if ev == nil || ev.InvocationID != invocationID {
 			continue
 		}

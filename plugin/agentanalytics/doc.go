@@ -197,9 +197,9 @@
 //     JSON_VALUE(attributes, '$.adk.node.path') evaluates to NULL on
 //     non-workflow rows rather than "" as in adk-python. (Pinned by
 //     TestDocParity_ADKNodeAttributesAndOmissions in doc_test.go).
-//   - render_ui_widgets and rewind_before_invocation_id omitted: ADK Go's
-//     session.Event and session.EventActions do not define these fields, so
-//     attributes.adk never includes them. (Pinned by
+//   - render_ui_widgets and rewind_before_invocation_id omitted: ADK Go has
+//     no RenderUIWidgets field, and this plugin does not emit the prototype's
+//     session rewind marker as an analytics attribute. (Pinned by
 //     TestDocParity_ADKNodeAttributesAndOmissions in doc_test.go).
 //   - attributes.usage_metadata shape: On [EventLLMResponse], Go writes
 //     snake_case prompt_token_count, candidates_token_count, and

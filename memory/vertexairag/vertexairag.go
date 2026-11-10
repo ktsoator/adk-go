@@ -165,8 +165,7 @@ func (s *service) AddSessionToMemory(ctx context.Context, curSession session.Ses
 	}
 
 	var outputLines []string
-	// adk-go has no session rewind events, unlike adk-python's _apply_rewinds, so events are processed directly.
-	if events := curSession.Events(); events != nil {
+	if events := session.ActiveEvents(curSession.Events()); events != nil {
 		for event := range events.All() {
 			if event == nil || event.Content == nil || len(event.Content.Parts) == 0 {
 				continue

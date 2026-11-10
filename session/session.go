@@ -217,6 +217,9 @@ type RequestInput struct {
 // Note: when multiple agents participate in one invocation, there could be
 // multiple events with IsFinalResponse() as True, for each participating agent.
 func (e *Event) IsFinalResponse() bool {
+	if e.Actions.RewindBeforeInvocationID != "" {
+		return false
+	}
 	// A compaction event is bookkeeping rather than conversation: it carries a
 	// record and no content of its own. It satisfies every clause below, so
 	// without this a streaming client deciding what to show a user would surface
@@ -250,6 +253,12 @@ func NewEvent(ctx context.Context, invocationID string) *Event {
 type EventActions struct {
 	// Set by agent.Context implementation.
 	StateDelta map[string]any `json:"stateDelta"`
+
+	// RewindBeforeInvocationID marks a rewind to before an invocation's first
+	// event. RewindService writes it atomically with state restoration. Setting
+	// it on an ordinary AppendEvent is rejected by the built-in services.
+	// Use ActiveEvents to resolve the retained history before consuming it.
+	RewindBeforeInvocationID string `json:"rewindBeforeInvocationId,omitempty"`
 
 	// Indicates that the event is updating an artifact. key is the filename,
 	// value is the version.

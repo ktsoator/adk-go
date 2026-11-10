@@ -75,7 +75,7 @@ type inMemoryService struct {
 func (s *inMemoryService) AddSessionToMemory(ctx context.Context, curSession session.Session) error {
 	var values []value
 
-	for event := range curSession.Events().All() {
+	for event := range session.ActiveEvents(curSession.Events()).All() {
 		if event.LLMResponse.Content == nil {
 			continue
 		}

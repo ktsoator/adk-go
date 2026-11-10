@@ -84,7 +84,7 @@ func GraphResumeIndexes(ctx agent.InvocationContext) []int {
 	selected := map[int]bool{}
 	inGraph := false
 	for _, response := range FunctionResponses(ctx.UserContent()) {
-		ev := findCallEvent(ctx.Session().Events(), response.ID)
+		ev := findCallEvent(session.ActiveEvents(ctx.Session().Events()), response.ID)
 		if ev == nil {
 			continue
 		}

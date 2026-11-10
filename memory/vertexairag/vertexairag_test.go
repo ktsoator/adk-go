@@ -1162,3 +1162,41 @@ func TestNewService(t *testing.T) {
 		}
 	})
 }
+
+func TestRewindMemoryUploadExcludesDiscardedEvents(t *testing.T) {
+	fake := &fakeRAGBackend{}
+	svc := newTestService(Config{RAGCorpus: "corpus"}, fake)
+	sessions := session.InMemoryService()
+	created, err := sessions.Create(t.Context(), &session.CreateRequest{AppName: "app", UserID: "user"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, inv := range []string{"A", "B"} {
+		ev := session.NewEvent(t.Context(), inv)
+		ev.Author = "user"
+		ev.Content = genai.NewContentFromText(inv, genai.RoleUser)
+		if err := sessions.AppendEvent(t.Context(), created.Session, ev); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := sessions.(session.RewindService).Rewind(t.Context(), &session.RewindRequest{AppName: "app", UserID: "user", SessionID: created.Session.ID(), BeforeInvocationID: "B"}); err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := sessions.Get(t.Context(), &session.GetRequest{AppName: "app", UserID: "user", SessionID: created.Session.ID()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.AddSessionToMemory(t.Context(), fresh.Session); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.uploads) != 1 {
+		t.Fatal("expected one memory upload")
+	}
+	var line transcriptEvent
+	if err := json.Unmarshal([]byte(fake.uploads[0].content), &line); err != nil {
+		t.Fatal("upload contained more than the retained event")
+	}
+	if line.Text != "A" {
+		t.Fatal("memory upload did not match active history")
+	}
+}

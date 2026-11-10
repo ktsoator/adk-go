@@ -389,7 +389,7 @@ func findUnresolvedTaskDelegations(sess session.Session, owner string, toolsDict
 	fcOrder := map[string]int{}
 	resolvedIDs := map[string]struct{}{}
 
-	for ev := range sess.Events().All() {
+	for ev := range session.ActiveEvents(sess.Events()).All() {
 		if ev == nil || ev.Content == nil {
 			continue
 		}

@@ -704,12 +704,15 @@ func cleanupRemoteTask(ctx context.Context, cfg A2AConfig, card *a2a.AgentCard, 
 }
 
 func newMessage(ctx agent.InvocationContext, cfg A2AConfig) (*a2a.Message, error) {
-	events := ctx.Session().Events()
+	events := session.ActiveEvents(ctx.Session().Events())
 	// Resume path: do not rewrite function responses to text. A single user
 	// event can mix peer and local tool answers (parallel tool merge); Python's
 	// preserve_as_resume forbids flattening any FR when any other stays as data.
 	// IsolationScope prevents sibling-scope function calls from leaking TaskID/contextID.
 	if userFnCall := getUserFunctionCallAt(events, events.Len()-1, ctx.Agent().Name(), ctx.IsolationScope()); userFnCall != nil {
+		if err := checkRewoundRemoteContext(ctx, userFnCall.taskID, userFnCall.contextID); err != nil {
+			return nil, err
+		}
 		event := userFnCall.response
 		parts, err := convertParts(ctx, cfg, event, nil)
 		if err != nil {
@@ -722,6 +725,9 @@ func newMessage(ctx agent.InvocationContext, cfg A2AConfig) (*a2a.Message, error
 	}
 
 	parts, contextID := toMissingRemoteSessionParts(ctx, events, cfg)
+	if err := checkRewoundRemoteContext(ctx, "", contextID); err != nil {
+		return nil, err
+	}
 	// A scoped node dispatch receives its input through UserContent, which is
 	// not an event in the shared session. Seed from it when the scope has no
 	// history of its own yet.
@@ -740,6 +746,31 @@ func newMessage(ctx agent.InvocationContext, cfg A2AConfig) (*a2a.Message, error
 	msg := a2a.NewMessage(a2a.MessageRoleUser, parts...)
 	msg.ContextID = contextID
 	return msg, nil
+}
+
+// A local rewind does not rewind a peer's stored conversation. Conservatively
+// reject reuse across any rewind, even one discarding only local events. A new
+// remote context created after the marker can be used normally.
+func checkRewoundRemoteContext(ctx agent.InvocationContext, taskID a2a.TaskID, contextID string) error {
+	if taskID == "" && contextID == "" {
+		return nil
+	}
+	rewound := false
+	history := ctx.Session().Events()
+	for i := history.Len() - 1; i >= 0; i-- {
+		ev := history.At(i)
+		if ev.Actions.RewindBeforeInvocationID != "" {
+			rewound = true
+		}
+		if !rewound || ev.IsolationScope != ctx.IsolationScope() || ev.Author != ctx.Agent().Name() {
+			continue
+		}
+		priorTask, priorContext := adka2a.GetA2ATaskInfo(ev)
+		if taskID != "" && taskID == priorTask || contextID != "" && contextID == priorContext {
+			return fmt.Errorf("%w: start a fresh remote context after local rewind", session.ErrRewindUnsupported)
+		}
+	}
+	return nil
 }
 
 func destroy(ctx context.Context, client A2AClient) {
