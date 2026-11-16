@@ -43,6 +43,7 @@ type LoadSkillResult struct {
 	SkillName    string           `json:"skill_name,omitempty"`
 	Instructions string           `json:"instructions,omitempty"`
 	Frontmatter  *FrontmatterJSON `json:"frontmatter,omitempty"`
+	Resources    []string         `json:"resources,omitempty"`
 }
 
 // LoadSkill creates a tool.Tool to load a skill's instructions.
@@ -70,9 +71,14 @@ func loadSkill(ctx agent.Context, args LoadSkillArgs, source skill.Source) (*Loa
 	if err != nil {
 		return nil, fmt.Errorf("load instructions for skill %q: %w", args.Name, err)
 	}
+	resources, err := source.ListResources(ctx, args.Name, ".")
+	if err != nil {
+		return nil, fmt.Errorf("list resources for skill: %w", err)
+	}
 	return &LoadSkillResult{
 		SkillName:    args.Name,
 		Instructions: instructions,
+		Resources:    resources,
 		Frontmatter: &FrontmatterJSON{
 			Name:          frontmatter.Name,
 			Description:   frontmatter.Description,
